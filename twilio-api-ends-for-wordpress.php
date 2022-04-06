@@ -10,7 +10,15 @@ use Twilio\Rest\Client;
 
 class TwilioApiEndsWP {
    public $pluginName = 'twapi';
-   public $restName = '/v1/'; 
+   public $restName = '/v1/';
+   private $endsExist = false;
+
+   public function getAPIExists(){
+      return $this->endsExist;
+   }
+   public function setAPIExists($exists){
+      $this->endsExist = $exists;
+   }
 
    public function displayTwapiSettingsPage(){
       include_once "twapi-admin-settings.php";
@@ -214,12 +222,13 @@ class TwilioApiEndsWP {
          echo "<span style='color:green;' class='dashicons dashicons-admin-plugins'></span> Current Active Endpoint: <strong>$cleanUrl</strong>";
          $goAheadAPI = true;
       } else if ($options['twapi_user_end'] && !$options['twapi_user_allow']) {
-         echo "<span class='dashicons dashicons-controls-pause' style='color:blue;'></span> <em>REST API Endpoint Currently Disabled";
+         echo "<span class='dashicons dashicons-controls-pause' style='color:blue;'></span> <em>REST API Endpoint Currently Disabled</em>";
       } else {
          echo "<em>Please Register an API Endpoint</em>";
       }
       if($goAheadAPI == true){
          $this->addRESTEnd($options['twapi_user_end']);
+         $this->setAPIExists(true);
       }
    }
    public function twapiApiUserEnd() {
@@ -255,11 +264,21 @@ class TwilioApiEndsWP {
    }
 
    //On startup, see if there's a valid API End and start it
+
    protected function addRESTEnd($daSlug){
-      // register_rest_route($this->restName, "/$daSlug", array(
-      //    'methods' => 'GET',
-      //    'callback' => 'idontknow'
-      // ));
+      add_action("rest_api_init", function(){
+      register_rest_route($this->pluginName . $this->restName, "/$daSlug/(?P<id>\d+)", array(
+          'methods' => 'GET',
+          'callback' => 'processAPIsend',
+          'permission_callback' => "__return_true",
+          'args' => array(
+             'id' => array(
+                'validate_callback' => function($param, $request, $key){
+                                         return is_numeric($param);
+                                       }
+                     )
+      )));
+      });
    }
 }
 //Execute the stuff
@@ -270,3 +289,4 @@ add_action("admin_menu", [$twapInit,"registerTwapiTestPage"]);
 add_action("admin_init", [$twapInit,"send_message_test"]);
 add_action("admin_menu", [$twapInit,"registerTwapiAPIConfig"]);
 add_action("admin_init", [$twapInit,"twapiAPIEndsSave"]);
+$apisEnabled = $twapInit->getAPIExists();

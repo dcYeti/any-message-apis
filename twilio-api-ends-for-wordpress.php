@@ -11,14 +11,6 @@ use Twilio\Rest\Client;
 class TwilioApiEndsWP {
    public $pluginName = 'twapi';
    public $restName = '/v1/';
-   private $endsExist = false;
-
-   public function getAPIExists(){
-      return $this->endsExist;
-   }
-   public function setAPIExists($exists){
-      $this->endsExist = $exists;
-   }
 
    public function displayTwapiSettingsPage(){
       include_once "twapi-admin-settings.php";
@@ -186,6 +178,7 @@ class TwilioApiEndsWP {
    public function displayTwapiAPIEndsPage(){
       include_once "twapi-api-ends-creator.php";
    }
+   
    public function twapiAPIEndsSave(){
       register_setting(
          $this->pluginName . '-api',
@@ -216,19 +209,13 @@ class TwilioApiEndsWP {
    public function twapiAPIText(){
       $options = get_option($this->pluginName . '-api');
       $cleanUrl = home_url() . '/wp-json/' . $this->pluginName . $this->restName. $options['twapi_user_end'];
-      $goAheadAPI = false;
       echo '<h3>API Endpoints should be all lower case with no spaces or special characters...add Security to Prevent Unwanted Use of Twilio Texting</h3>';
       if($options['twapi_user_end'] && $options['twapi_user_allow']){
          echo "<span style='color:green;' class='dashicons dashicons-admin-plugins'></span> Current Active Endpoint: <strong>$cleanUrl</strong>";
-         $goAheadAPI = true;
       } else if ($options['twapi_user_end'] && !$options['twapi_user_allow']) {
          echo "<span class='dashicons dashicons-controls-pause' style='color:blue;'></span> <em>REST API Endpoint Currently Disabled</em>";
       } else {
          echo "<em>Please Register an API Endpoint</em>";
-      }
-      if($goAheadAPI == true){
-         $this->addRESTEnd($options['twapi_user_end']);
-         $this->setAPIExists(true);
       }
    }
    public function twapiApiUserEnd() {
@@ -256,6 +243,8 @@ class TwilioApiEndsWP {
          checked(1 == $options['twapi_user_allow']);
          echo " />";   
    }
+
+
    public function pluginAPIEndsValidate($input)
    {
       $newinput["twapi_user_end"] = strtolower(str_replace(" ","",trim($input["twapi_user_end"])));
@@ -263,22 +252,67 @@ class TwilioApiEndsWP {
       return $newinput;
    }
 
-   //On startup, see if there's a valid API End and start it
+   public function processAPIsend(WP_REST_Request $request){
+      $phoneNum = $request['phonenum'];
+      $daUrl = $request['da-url'];
+      //gets our api details from the database.
+      $api_details = get_option($this->pluginName);
+      $to         = $phoneNum;
+      $sender_id  = $api_details["twapi_from_num"];
+      $message    = 'test' . $daUrl;
+      $TWILIO_SID = $api_details["twapi_sid"];
+      $TWILIO_TOKEN = $api_details["twapi_auth_token"];
 
-   protected function addRESTEnd($daSlug){
-      add_action("rest_api_init", function(){
-      register_rest_route($this->pluginName . $this->restName, "/$daSlug/(?P<id>\d+)", array(
+      try {
+         $client = new Client($TWILIO_SID, $TWILIO_TOKEN);
+         $response = $client->messages->create(
+               $to,
+               array(
+                  "from" => $sender_id,
+                  "body" => $message
+               )
+         );
+         $statusMsg = 'Sent Successfully';
+      } catch (Exception $e) {
+         $statusMsg = $e->getMessage();
+      }     
+      
+      $response = array(
+         'status'  => 200,
+         'message' => $statusMsg
+      );       
+      return new WP_REST_Response($response);
+
+   }
+   public function isValidPhone($param, $request, $key){      
+      $cleanPhone = preg_replace('/\D+/', '', $request['phonenum']);
+      $cleanPhone  = '+' . $cleanPhone;
+      return strlen($cleanPhone) > 7 && strlen($cleanPhone) < 15 ? true:false;
+   }
+   public function sanitizePhone($param, $request, $key){
+      $cleanPhone = preg_replace('/\D+/', '', $request['phonenum']);
+      $cleanPhone  = '+' . $cleanPhone;
+      return $cleanPhone;
+   }
+   public function addRESTEnd(){
+      //register_rest_route('twapi/v1', '/yeah', array(
+      $options = get_option($this->pluginName . '-api');
+      $goAheadAPI = $options['twapi_user_allow'] == '1' ? true : false;
+      $daSlug = $options['twapi_user_end'];
+      if($goAheadAPI == true){
+      register_rest_route($this->pluginName . $this->restName, "$daSlug/(?P<phonenum>\d+)", array(
           'methods' => 'GET',
-          'callback' => 'processAPIsend',
+          'callback' => array($this,'processAPIsend'),
           'permission_callback' => "__return_true",
           'args' => array(
-             'id' => array(
-                'validate_callback' => function($param, $request, $key){
-                                         return is_numeric($param);
-                                       }
-                     )
-      )));
-      });
+             'phonenum' => array(
+                'validate_callback' => [$this, "isValidPhone"],
+                'sanitize_callback' => [$this, "sanitizePhone"]
+             ),
+             'da-url' => array()
+            )
+      ));
+      }
    }
 }
 //Execute the stuff
@@ -289,4 +323,4 @@ add_action("admin_menu", [$twapInit,"registerTwapiTestPage"]);
 add_action("admin_init", [$twapInit,"send_message_test"]);
 add_action("admin_menu", [$twapInit,"registerTwapiAPIConfig"]);
 add_action("admin_init", [$twapInit,"twapiAPIEndsSave"]);
-$apisEnabled = $twapInit->getAPIExists();
+add_action("rest_api_init", [$twapInit, "addRESTEnd"]);

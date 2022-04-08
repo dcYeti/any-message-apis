@@ -300,8 +300,10 @@ class TwilioApiEndsWP {
       $goAheadAPI = $options['twapi_user_allow'] == '1' ? true : false;
       $daSlug = $options['twapi_user_end'];
       if($goAheadAPI == true){
-      register_rest_route($this->pluginName . $this->restName, "$daSlug/(?P<phonenum>\d+)", array(
-          'methods' => 'GET',
+      //register_rest_route($this->pluginName . $this->restName, "$daSlug/(?P<phonenum>\d+)", array( //working get
+      register_rest_route($this->pluginName . $this->restName, "$daSlug", array(
+
+         'methods' => 'POST',
           'callback' => array($this,'processAPIsend'),
           'permission_callback' => "__return_true",
           'args' => array(

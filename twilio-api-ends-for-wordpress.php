@@ -57,6 +57,13 @@ class TwilioApiEndsWP {
          "twapi-settings-page",
          "twapi_main",
       );
+      add_settings_field(
+         'twapi_message',
+         "Content of Text Message",
+         [$this, "twapiMessage"],
+         "twapi-settings-page",
+         "twapi_main",
+      );
    }
    //Header Text
    public function twapiSectionText() {
@@ -99,11 +106,23 @@ class TwilioApiEndsWP {
          placeholder='Enter your From Number (optional)' 
          />";
    }
+   //Input Field for SID
+   public function twapiMessage() {
+      $options = get_option($this->pluginName);
+      echo "
+         <textarea id='$this->pluginName[twapi_message]'
+         name='$this->pluginName[twapi_message]'
+         value='{$options['twapi_message']}'
+         cols='40' rows='4'
+         >{$options['twapi_message']}</textarea>";
+   }
+
    public function pluginOptionsValidate($input)
    {
       $newinput["twapi_sid"] = trim($input["twapi_sid"]);
       $newinput["twapi_auth_token"] = trim($input["twapi_auth_token"]);
       $newinput["twapi_from_num"] = trim($input["twapi_from_num"]);
+      $newinput["twapi_message"] = trim($input["twapi_message"]);
       return $newinput;
    }
    public function registerTwapiTestPage(){
@@ -200,8 +219,15 @@ class TwilioApiEndsWP {
       );
       add_settings_field(
          'twapi_user_allow',
-         "Enable API Endpoing (must be checked to use)",
+         "Enable API Endpoint (must be checked to use)",
          [$this, "twapiApiUserAllow"],
+         "twapi-api-ends-page",
+         "twapi_api_ends",
+      );
+      add_settings_field(
+         'twapi_enable_cors',
+         "Enable CORS Protection (recommend for production)",
+         [$this, "twapiEnableCors"],
          "twapi-api-ends-page",
          "twapi_api_ends",
       );
@@ -243,12 +269,25 @@ class TwilioApiEndsWP {
          checked(1 == $options['twapi_user_allow']);
          echo " />";   
    }
+   public function twapiEnableCors() {
+      $options = get_option($this->pluginName . '-api');
+      $checkStatus = $options['twapi_enable_cors'] || $options['twapi_enable_cors'] == '1' ? '1' : '0'; 
+      echo "
+         <input id='$this->pluginName-api[twapi_enable_cors]'
+         name='$this->pluginName-api[twapi_enable_cors]'
+         size='40'
+         type='checkbox'
+         value='1' ";
+         checked(1 == $options['twapi_enable_cors']);
+         echo " />";   
+   }
 
 
    public function pluginAPIEndsValidate($input)
    {
       $newinput["twapi_user_end"] = strtolower(str_replace(" ","",trim($input["twapi_user_end"])));
       $newinput["twapi_user_allow"] = $input["twapi_user_allow"] == '1' ? 1 :0;
+      $newinput["twapi_enable_cors"] = $input["twapi_enable_cors"] == '1' ? 1 :0;
       return $newinput;
    }
 
@@ -257,9 +296,10 @@ class TwilioApiEndsWP {
       $daUrl = $request['da-url'];
       //gets our api details from the database.
       $api_details = get_option($this->pluginName);
+      $daMessage = $api_details['twapi_message'];
       $to         = $phoneNum;
       $sender_id  = $api_details["twapi_from_num"];
-      $message    = 'test' . $daUrl;
+      $message    = "$daMessage " . $daUrl;
       $TWILIO_SID = $api_details["twapi_sid"];
       $TWILIO_TOKEN = $api_details["twapi_auth_token"];
 
@@ -294,15 +334,24 @@ class TwilioApiEndsWP {
       $cleanPhone  = '+' . $cleanPhone;
       return $cleanPhone;
    }
+   public function initCors(){
+      header( 'Access-Control-Allow-Origin: ' . esc_url_raw( site_url() ) );
+      header( 'Access-Control-Allow-Methods: POST' );
+      header( 'Access-Control-Allow-Credentials: true' );
+   }
    public function addRESTEnd(){
       //register_rest_route('twapi/v1', '/yeah', array(
       $options = get_option($this->pluginName . '-api');
       $goAheadAPI = $options['twapi_user_allow'] == '1' ? true : false;
+      $enableCors = $options['twapi_enable_cors'] == '1' ? true : false;
+      if($enableCors == true){
+         remove_filter( 'rest_pre_serve_request', 'rest_send_cors_headers' );
+	      add_filter( 'rest_pre_serve_request', [$this,'initCors']);
+      }
       $daSlug = $options['twapi_user_end'];
       if($goAheadAPI == true){
       //register_rest_route($this->pluginName . $this->restName, "$daSlug/(?P<phonenum>\d+)", array( //working get
       register_rest_route($this->pluginName . $this->restName, "$daSlug", array(
-
          'methods' => 'POST',
           'callback' => array($this,'processAPIsend'),
           'permission_callback' => "__return_true",
